@@ -1,47 +1,51 @@
-## Structure
-
+## Setup
+### Prerequisite
+- Docker
+- Docker compose
+- Python3, pip
+### Phase 1
+#### Packages
 ```
-db-security-lab/
-├── README.md
-├── docker-compose.yml
-│
-├── config/
-│   ├── acra.yaml               # Cấu hình AcraServer
-│   ├── acracensor.yaml         # Cấu hình DBF rules
-│   ├── prometheus.yml          # Scrape configs
-│   ├── alertmanager.yml        # Alert routes
-│   └── grafana/
-│       └── dashboards/
-│           └── mysql-overview.json
-│
-├── mysql/
-│   ├── init.sql                # Schema khởi tạo
-│   └── my.cnf                  # MySQL config (slow log, etc.)
-│
-├── scripts/
-│   ├── seed_all.py             # Sinh dữ liệu mẫu
-│   ├── scan_schema.py          # Sensitive Discovery - schema scan
-│   ├── scan_data_patterns.py   # Sensitive Discovery - data scan
-│   ├── test_sqli.py            # DBF - SQL injection test
-│   ├── test_firewall.py        # DBF - firewall rules test
-│   ├── test_masking.py         # Data Masking verification
-│   ├── generate_load.py        # Performance - tạo load test
-│   └── stress_connections.py   # Performance - connection stress
-│
-├── screenshots/                # Bằng chứng demo (PNG)
-│   ├── active_monitor/
-│   ├── dbf/
-│   ├── data_masking/
-│   ├── performance/
-│   └── sensitive_discovery/
-│
-├── logs/                       # Log mẫu thu được
-│   ├── audit_sample.json
-│   └── slow_query_sample.log
-│
-└── report/
-    ├── proposal.md             # File này
-    ├── final_report.md         # Báo cáo cuối
-    └── demo_video_link.txt
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y \
+  ca-certificates curl wget git jq tree unzip \
+  python3 python3-pip python3-venv
+```
+#### Containers
+```
+docker compose build
+docker compose up -d
 ```
 
+#### Python venv
+```
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+#### Mysql workbench
+```
+cd /tmp
+wget https://dev.mysql.com/get/mysql-apt-config_0.8.36-1_all.deb
+sudo dpkg -i mysql-apt-config_0.8.36-1_all.deb
+sudo apt update
+sudo apt install -y mysql-workbench-community
+```
+
+#### Check
+```
+cd ~/db-security-lab
+set -a
+source .env
+set +a
+
+docker compose ps
+
+docker exec dbsec-mysql \
+  mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" \
+  -e "SELECT VERSION() AS mysql_version, CURRENT_USER() AS current_user;"
+
+curl -fsS http://127.0.0.1:9104/metrics | sed -n '1,10p'
+curl -fsS http://127.0.0.1:9090/-/ready && echo
+curl -fsS http://127.0.0.1:3000/api/health && echo
+```

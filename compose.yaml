@@ -1,0 +1,106 @@
+name: db-security-lab
+
+networks:
+  dbsec_net:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  prometheus_data:
+  grafana_data:
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: dbsec-mysql
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_APP_USER}
+      MYSQL_PASSWORD: ${MYSQL_APP_PASSWORD}
+    command:
+      - mysqld
+      - --bind-address=0.0.0.0
+      - --performance-schema=ON
+      - --slow_query_log=OFF
+      - --general_log=OFF
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+      - ./mysql/my.cnf:/etc/mysql/conf.d/z-custom.cnf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - dbsec_net
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.19.0
+    container_name: dbsec-mysqld-exporter
+    restart: unless-stopped
+    command:
+      - --config.my-cnf=/etc/mysqld-exporter/.my.cnf
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./config/mysqld-exporter/.my.cnf:/etc/mysqld-exporter/.my.cnf:ro
+    ports:
+      - "127.0.0.1:9104:9104"
+    networks:
+      - dbsec_net
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    container_name: dbsec-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    depends_on:
+      - mysqld-exporter
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - dbsec_net
+
+  alertmanager:
+    image: prom/alertmanager:v0.31.1
+    container_name: dbsec-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - dbsec_net
+
+  grafana:
+    image: grafana/grafana:12.4.1
+    container_name: dbsec-grafana
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - dbsec_net
